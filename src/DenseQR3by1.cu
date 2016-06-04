@@ -19,6 +19,8 @@
 #define BITTYROWS       (8)
 #define MODULE_MAX_BITS	(32) // to allow squaring withing uint64_t
 
+#define INV(n, module)	pow_mod(n, module - 2, module)
+
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
 static void HandleError(cudaError_t err, const char *file, int line) {
@@ -50,7 +52,7 @@ __device__ __host__ uint64_t sqrt_mod(uint64_t n, uint64_t module, uint64_t sqrt
 
 	// test quadratic residue
 	*nLeg = pow_mod(n, (module - 1) / 2, module);
-	if (*nLeg != 1) return 0;
+	if (*nLeg != 1) return n;
 
 	// initialize loop variables
 	prevRequiredSquares = sqrtS;
@@ -83,10 +85,6 @@ __device__ __host__ uint64_t sqrt_mod(uint64_t n, uint64_t module, uint64_t sqrt
 	}
 
 	return sqrt;
-}
-
-__device__ uint64_t inv_mod(uint64_t n) {
-	return 0;
 }
 
 __device__ void FACTORIZE ( )
@@ -404,8 +402,13 @@ __device__ void FACTORIZE ( )
                     return;
             	}
                 s = sqrt_mod (s, module, sqrtQ, sqrtS, sqrtZ, &sLeg) ;
+                if (sLeg == module - 1) {
+                	printf ("Cannot determine size of vector, no square root of s = %llu. Exiting.\n", s);
+                	return;
+                }
                 v1 = (module + x1 - s) % module ; // prevent unsigned underflow by prepending a module
-                tau = module - inv_mod( (s * v1) % module ) ; // prevent unsigned underflow by prepending a module
+                tau = module - INV( (s * v1) % module , module ) ; // prevent unsigned underflow by prepending a module
+                printf("Successfully computed Householder coefficients for column %d. s = %llu, v1 = %llu, tau = %llu.\n", k, s, v1, tau);
             }
             shRdiag [k] = s ;       // the diagonal entry of R
             shA [k][k] = v1 ;       // the topmost entry of the vector v
@@ -729,12 +732,13 @@ int main() {
 	cudaDeviceProp prop;
 	uint64_t *F, *module;
 	TaskDescriptor *queueHost, *queueDev;
+
 	HANDLE_ERROR(cudaGetDevice(&dev));
 	HANDLE_ERROR(cudaGetDeviceProperties(&prop, dev));
 
 	printf("Device: %s\n", prop.name);
 
-	srand(0);
+	srand(2);
 
 	HANDLE_ERROR(cudaMalloc((void **) &(queueDev), numTasks * sizeof(TaskDescriptor)));
 	HANDLE_ERROR(cudaHostAlloc((void **) &(queueHost), numTasks * sizeof(TaskDescriptor), cudaHostAllocDefault));
