@@ -554,7 +554,6 @@ __device__ void FACTORIZE ( )
             }
             printf("Total sigma for column %d: %llu\n", k+1, sigma);
         }
-        break;
     }
 
     // tril (A) now holds all the Householder vectors, including the diagonal.
@@ -770,13 +769,21 @@ int main() {
 		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[0]), N * N * sizeof(uint64_t))); // memory for output V/T tile
 		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[1]), sizeof(uint64_t))); // memory for module
 
+		char filename[255];
+		sprintf(filename, "task%03d", i);
+		FILE *f = fopen(filename, "r");
+		if (!f) {
+			printf("Cannot open file %s for reading.\n", filename);
+		}
 		for (int m = 0; m < queueHost[i].fm; ++m) {
 			for (int n = 0; n < queueHost[i].fn; ++n) {
-				F[m*queueHost[i].fn + n] = rand() % *module;
-				printf("%02llu ", F[m*queueHost[i].fn + n]);
+				fscanf(f, "%llu", &(F[m*queueHost[i].fn + n]));
+//				F[m*queueHost[i].fn + n] = rand() % *module;
+//				printf("%02llu ", F[m*queueHost[i].fn + n]);
 			}
-			printf("\n");
+			//printf("\n");
 		}
+		fclose(f);
 
 		HANDLE_ERROR(cudaMemcpy(queueHost[i].F, F, M * N * sizeof(uint64_t), cudaMemcpyHostToDevice));
 		HANDLE_ERROR(cudaMemcpy(queueHost[i].AuxAddress[1], module, sizeof(uint64_t), cudaMemcpyHostToDevice));
@@ -794,12 +801,12 @@ int main() {
 	for (int i = 0; i < numTasks; ++i) {
 		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].F, M * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
 
-		for (int m = 0; m < queueHost[i].fm; ++m) {
-			for (int n = 0; n < queueHost[i].fn; ++n) {
-				printf("%02llu ", F[m*queueHost[i].fn + n]);
-			}
-			printf("\n");
-		}
+//		for (int m = 0; m < queueHost[i].fm; ++m) {
+//			for (int n = 0; n < queueHost[i].fn; ++n) {
+//				printf("%02llu ", F[m*queueHost[i].fn + n]);
+//			}
+//			printf("\n");
+//		}
 
 		HANDLE_ERROR(cudaFree(queueHost[i].F));
 		HANDLE_ERROR(cudaFree(queueHost[i].AuxAddress[0]));
