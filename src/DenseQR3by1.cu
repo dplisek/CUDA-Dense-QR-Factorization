@@ -766,7 +766,7 @@ int main() {
 		queueHost[i].extra[4] = 0;
 
 		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].F), M * N * sizeof(uint64_t))); // memory for input matrix
-		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[0]), N * N * sizeof(uint64_t))); // memory for output V/T tile
+		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[0]), (N+1) * N * sizeof(uint64_t))); // memory for output V/T tile
 		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[1]), sizeof(uint64_t))); // memory for module
 
 		char filename[255];
@@ -801,12 +801,23 @@ int main() {
 	for (int i = 0; i < numTasks; ++i) {
 		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].F, M * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
 
-//		for (int m = 0; m < queueHost[i].fm; ++m) {
-//			for (int n = 0; n < queueHost[i].fn; ++n) {
-//				printf("%02llu ", F[m*queueHost[i].fn + n]);
-//			}
-//			printf("\n");
-//		}
+		printf("\nTask %d R:\n", i);
+		for (int m = 0; m < queueHost[i].fm; ++m) {
+			for (int n = 0; n < queueHost[i].fn; ++n) {
+				printf("%02llu ", F[m*queueHost[i].fn + n]);
+			}
+			printf("\n");
+		}
+
+		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].AuxAddress[0], (N+1) * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
+
+		printf("\nTask %d VT:\n", i);
+		for (int m = 0; m < queueHost[i].fn + 1; ++m) {
+			for (int n = 0; n < queueHost[i].fn; ++n) {
+				printf("%02llu ", F[m*queueHost[i].fn + n]);
+			}
+			printf("\n");
+		}
 
 		HANDLE_ERROR(cudaFree(queueHost[i].F));
 		HANDLE_ERROR(cudaFree(queueHost[i].AuxAddress[0]));
