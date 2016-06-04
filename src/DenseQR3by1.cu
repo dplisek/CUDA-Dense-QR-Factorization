@@ -554,8 +554,8 @@ __device__ void FACTORIZE ( )
             }
             printf("Total sigma for column %d: %llu\n", k+1, sigma);
         }
+        break;
     }
-	return;
 
     // tril (A) now holds all the Householder vectors, including the diagonal.
     // triu (A,1) now holds R, excluding the diagonal.
@@ -622,7 +622,7 @@ __device__ void FACTORIZE ( )
             else
             {
                 glVT[i+1][j] = shA[i][j];
-                shA[i][j] = 0.0;
+                shA[i][j] = 0;
             }
         }
 
@@ -773,7 +773,7 @@ int main() {
 		for (int m = 0; m < queueHost[i].fm; ++m) {
 			for (int n = 0; n < queueHost[i].fn; ++n) {
 				F[m*queueHost[i].fn + n] = rand() % *module;
-				printf("%010llu ", F[m*queueHost[i].fn + n]);
+				printf("%02llu ", F[m*queueHost[i].fn + n]);
 			}
 			printf("\n");
 		}
@@ -792,6 +792,15 @@ int main() {
 	cudaDeviceSynchronize();
 
 	for (int i = 0; i < numTasks; ++i) {
+		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].F, M * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
+
+		for (int m = 0; m < queueHost[i].fm; ++m) {
+			for (int n = 0; n < queueHost[i].fn; ++n) {
+				printf("%02llu ", F[m*queueHost[i].fn + n]);
+			}
+			printf("\n");
+		}
+
 		HANDLE_ERROR(cudaFree(queueHost[i].F));
 		HANDLE_ERROR(cudaFree(queueHost[i].AuxAddress[0]));
 		HANDLE_ERROR(cudaFree(queueHost[i].AuxAddress[1]));
