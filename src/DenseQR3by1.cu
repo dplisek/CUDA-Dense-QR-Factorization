@@ -335,7 +335,7 @@ __device__ void FACTORIZE ( )
         {
             sigma = (sigma + RSIGMA (ii)) % module ;
         }
-        printf("Total sigma for column 0: %llu\n", sigma);
+        //printf("Total sigma for column 0: %llu\n", sigma);
     }
 
     //--------------------------------------------------------------------------
@@ -387,7 +387,7 @@ __device__ void FACTORIZE ( )
 //            if (sigma <= EPSILON)
             if (sigma == 0)
             {
-                printf ("Hit sigma = 0, v1 would become 0, cannot invert 0 to get tau. Exiting.\n") ;
+                printf ("Error in column %d: Hit sigma = 0, v1 would become 0, cannot invert 0 to get tau. Exiting.\n", k) ;
                 return;
 //                s = x1 ;
 //                v1 = 0 ;
@@ -397,17 +397,17 @@ __device__ void FACTORIZE ( )
             {
             	s = (((x1*x1) % module) + sigma) % module ;
             	if (s == 0) {
-                    printf ("Hit s = 0, cannot invert 0 to get tau. Exiting.\n") ;
+                    printf ("Error in column %d: Hit s = 0, cannot invert 0 to get tau. Exiting.\n", k) ;
                     return;
             	}
                 s = sqrt_mod (s, module, sqrtQ, sqrtS, sqrtZ, &sLeg) ;
                 if (sLeg == module - 1) {
-                	printf ("Cannot determine size of vector, no square root of s = %llu. Exiting.\n", s);
+                	printf ("Error in column %d: Cannot determine size of vector, no square root of s = %llu. Exiting.\n", k, s);
                 	return;
                 }
                 v1 = (module + x1 - s) % module ; // prevent unsigned underflow by prepending a module
                 tau = module - INV( (s * v1) % module , module ) ; // prevent unsigned underflow by prepending a module
-                printf("Successfully computed Householder coefficients for column %d. s = %llu, v1 = %llu, tau = %llu.\n", k, s, v1, tau);
+                //printf("Successfully computed Householder coefficients for column %d. s = %llu, v1 = %llu, tau = %llu.\n", k, s, v1, tau);
             }
             shRdiag [k] = s ;       // the diagonal entry of R
             shA [k][k] = v1 ;       // the topmost entry of the vector v
@@ -552,7 +552,7 @@ __device__ void FACTORIZE ( )
             {
                 sigma = (sigma + RSIGMA (ii)) % module ;
             }
-            printf("Total sigma for column %d: %llu\n", k+1, sigma);
+            //printf("Total sigma for column %d: %llu\n", k+1, sigma);
         }
     }
 
@@ -732,7 +732,7 @@ __global__ void qrKernel
 
 int main() {
 	int dev;
-	int numTasks = 1;
+	int numTasks = 6;
 	cudaDeviceProp prop;
 	uint64_t *F, *module;
 	TaskDescriptor *queueHost, *queueDev;
@@ -742,7 +742,7 @@ int main() {
 
 	printf("Device: %s\n", prop.name);
 
-	srand(2);
+	srand(14);
 
 	HANDLE_ERROR(cudaMalloc((void **) &(queueDev), numTasks * sizeof(TaskDescriptor)));
 	HANDLE_ERROR(cudaHostAlloc((void **) &(queueHost), numTasks * sizeof(TaskDescriptor), cudaHostAllocDefault));
@@ -750,9 +750,10 @@ int main() {
 	HANDLE_ERROR(cudaHostAlloc((void **) &(F), M * N * sizeof(uint64_t), cudaHostAllocDefault));
 	HANDLE_ERROR(cudaHostAlloc((void **) &(module), sizeof(uint64_t), cudaHostAllocDefault));
 
+	*module = 4294967291; // 32-bit
+
 	for (int i = 0; i < numTasks; ++i) {
 
-		*module = 23;
 		queueHost[i].Type = TASKTYPE_FactorizeVT_3x1;
 		queueHost[i].fm = M;
 		queueHost[i].fn = N;
@@ -778,8 +779,9 @@ int main() {
 		for (int m = 0; m < queueHost[i].fm; ++m) {
 			for (int n = 0; n < queueHost[i].fn; ++n) {
 				fscanf(f, "%llu", &(F[m*queueHost[i].fn + n]));
-//				F[m*queueHost[i].fn + n] = rand() % *module;
-//				printf("%02llu ", F[m*queueHost[i].fn + n]);
+				//F[m*queueHost[i].fn + n] = rand() % *module;
+				//printf("%010llu", F[m*queueHost[i].fn + n]);
+				//if (n < queueHost[i].fn - 1) printf("\t");
 			}
 			//printf("\n");
 		}
@@ -799,25 +801,25 @@ int main() {
 	cudaDeviceSynchronize();
 
 	for (int i = 0; i < numTasks; ++i) {
-		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].F, M * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
-
-		printf("\nTask %d R:\n", i);
-		for (int m = 0; m < queueHost[i].fm; ++m) {
-			for (int n = 0; n < queueHost[i].fn; ++n) {
-				printf("%02llu ", F[m*queueHost[i].fn + n]);
-			}
-			printf("\n");
-		}
-
-		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].AuxAddress[0], (N+1) * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
-
-		printf("\nTask %d VT:\n", i);
-		for (int m = 0; m < queueHost[i].fn + 1; ++m) {
-			for (int n = 0; n < queueHost[i].fn; ++n) {
-				printf("%02llu ", F[m*queueHost[i].fn + n]);
-			}
-			printf("\n");
-		}
+//		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].F, M * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
+//
+//		printf("\nTask %d R:\n", i);
+//		for (int m = 0; m < queueHost[i].fm; ++m) {
+//			for (int n = 0; n < queueHost[i].fn; ++n) {
+//				printf("%010llu ", F[m*queueHost[i].fn + n]);
+//			}
+//			printf("\n");
+//		}
+//
+//		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].AuxAddress[0], (N+1) * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
+//
+//		printf("\nTask %d VT:\n", i);
+//		for (int m = 0; m < queueHost[i].fn + 1; ++m) {
+//			for (int n = 0; n < queueHost[i].fn; ++n) {
+//				printf("%010llu ", F[m*queueHost[i].fn + n]);
+//			}
+//			printf("\n");
+//		}
 
 		HANDLE_ERROR(cudaFree(queueHost[i].F));
 		HANDLE_ERROR(cudaFree(queueHost[i].AuxAddress[0]));
