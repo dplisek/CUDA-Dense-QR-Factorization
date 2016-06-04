@@ -333,10 +333,9 @@ __device__ void FACTORIZE ( )
         #pragma unroll
         for (int ii = 0 ; ii < MCHUNK ; ii++)
         {
-        	printf("Partial sigma nr. %d: %llu\n", ii, RSIGMA(ii));
             sigma = (sigma + RSIGMA (ii)) % module ;
         }
-        printf("Total sigma: %llu\n", sigma);
+        printf("Total sigma for column 0: %llu\n", sigma);
     }
 
     //--------------------------------------------------------------------------
@@ -476,7 +475,6 @@ __device__ void FACTORIZE ( )
         // All threads need to see the z vector
         __syncthreads ( ) ;
 
-        return;
         //----------------------------------------------------------------------
         // update A (in register) and compute the next sigma
         //----------------------------------------------------------------------
@@ -493,7 +491,8 @@ __device__ void FACTORIZE ( )
                     int i = MYBITTYROW (ii) ;
                     if (i >= k)
                     {
-                        rbitA [ii] += rbitV [ii] * z ;
+                        rbitA [ii] += (rbitV [ii] * z) % module ;
+                        rbitA [ii] %= module;
                     }
                 }
             }
@@ -510,7 +509,8 @@ __device__ void FACTORIZE ( )
                     int i = MYBITTYROW (ii) ;
                     if (i >= k+2)
                     {
-                        s += rbitA [ii] * rbitA [ii] ;
+                        s += (rbitA [ii] * rbitA [ii]) % module;
+                        s %= module;
                     }
                 }
                 RSIGMA (MYBITTYROW(0)) = s ;
@@ -529,7 +529,8 @@ __device__ void FACTORIZE ( )
                 uint64_t t_ik = 0 ;
                 for (int jj = 0 ; jj < k ; jj++)
                 {
-                    t_ik += shT [threadIdx.x][jj] * shZ [0][jj] ;
+                    t_ik += (shT [threadIdx.x][jj] * shZ [0][jj]) % module;
+                    t_ik %= module;
                 }
                 shT [threadIdx.x][k] = t_ik ;
             }
@@ -549,10 +550,12 @@ __device__ void FACTORIZE ( )
             #pragma unroll
             for (int ii = 0 ; ii < MCHUNK ; ii++)
             {
-                sigma += RSIGMA (ii) ;
+                sigma = (sigma + RSIGMA (ii)) % module ;
             }
+            printf("Total sigma for column %d: %llu\n", k+1, sigma);
         }
     }
+	return;
 
     // tril (A) now holds all the Householder vectors, including the diagonal.
     // triu (A,1) now holds R, excluding the diagonal.
