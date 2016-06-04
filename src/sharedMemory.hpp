@@ -19,6 +19,7 @@ typedef union sharedMemory
     	uint64_t A1 [TILESIZE] ;
     	uint64_t V1 [TILESIZE] ;
     	uint64_t tau ;
+    	uint64_t module ;
 
         #undef MAX_MCHUNK
     } factorize ;

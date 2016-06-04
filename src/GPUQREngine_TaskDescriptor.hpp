@@ -65,6 +65,7 @@ struct TaskDescriptor
                                         //     AuxAddress[3]    is *Rimap
                                         //   Apply, Factorize:
                                         //     AuxAddress[0]    is VT
+    									//	   AuxAddress[1]    is module
                                         //   ApplyFactorize:
                                         //     AuxAddress[0:1] are VT
 

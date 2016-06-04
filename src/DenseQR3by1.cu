@@ -17,7 +17,7 @@
 #define M               (ROW_PANELSIZE * TILESIZE)
 #define N               (TILESIZE)
 #define BITTYROWS       (8)
-#define MODULE			(13) // 31-bit number, squared is 62-bit, fits int uint64_t
+#define MODULE_MAX_BITS	(32) // to allow squaring withing uint64_t
 
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
@@ -28,55 +28,61 @@ static void HandleError(cudaError_t err, const char *file, int line) {
 	}
 }
 
-__device__ __host__ uint64_t pow_mod(uint64_t x, int b) {
-	uint64_t z = x;
-	int l = floor(log2((double) b)) + 1;
+__device__ __host__ uint64_t pow_mod(uint64_t x, uint64_t b, uint64_t module) {
+	uint64_t z = 1;
+	uint64_t i = ((uint64_t) 1) << MODULE_MAX_BITS - 1; // has only a 1 in the highest possible bit in module
 
-	for (int i = l-2; i >= 0; --i) {
-		z = (z*z) % MODULE;
-		if (b & (1<<i)) z = (z*x) % MODULE;
+	while (i && !(b & i)) {
+		i = i >> 1;
+	}
+
+	while (i) {
+		z = (z*z) % module;
+		if (b & i) z = (z*x) % module;
+		i = i >> 1;
 	}
 
 	return z;
 }
 
-__device__ __host__ uint64_t sqrt_mod(uint64_t n, int *nLeg) {
-	uint64_t p, q, z, r, t, m, tt, i, b, c, j;
-	int s;
+__device__ __host__ uint64_t sqrt_mod(uint64_t n, uint64_t module, uint64_t sqrtQ, uint64_t sqrtS, uint64_t sqrtZ, uint64_t *nLeg) {
+	uint64_t sqrt, test, prevRequiredSquares, requiredSquares, c, iterator, squarer;
 
-	*nLeg = (int) pow_mod(n, (int) (MODULE - 1) / 2);
+	// test quadratic residue
+	*nLeg = pow_mod(n, (module - 1) / 2, module);
 	if (*nLeg != 1) return 0;
 
-	p = MODULE - 1;
-	s = 0;
-	while (p % 2 == 0) {
-		p /= 2;
-		s += 1;
+	// initialize loop variables
+	prevRequiredSquares = sqrtS;
+	c = sqrtZ;
+	sqrt = pow_mod(n, ((sqrtQ + 1) / 2), module);
+	test = pow_mod(n, sqrtQ, module);
+
+	// sqrt generation loop
+	while (test != 1) {
+
+		// c squaring loop
+		squarer = test;
+		requiredSquares = 1;
+		bool doneSquaring = false;
+		for (iterator = 0; iterator < prevRequiredSquares - 2; ++iterator) {
+			if (doneSquaring || (squarer = (squarer*squarer) % module) == 1) {
+				doneSquaring = true;
+				c = (c*c) % module;
+			} else {
+				++requiredSquares;
+			}
+		}
+		prevRequiredSquares = requiredSquares;
+
+		// update loop variables
+		sqrt = (sqrt*c) % module;
+		c = (c*c) % module;
+		test = (test*c) % module;
+
 	}
-	q = p;
 
-	z = 2;
-	while (pow_mod(z, (int) (MODULE - 1) / 2) != MODULE - 1) ++z;
-	c = pow_mod(z, (int) q);
-
-	r = pow_mod(n, (int) ((q + 1) / 2));
-	t = pow_mod(n, (int) q);
-	m = s;
-
-	while (t != 1) {
-		tt = t;
-		i = 1;
-		while ((tt = (tt*tt) % MODULE) != 1) ++i;
-		m = m - i - 1;
-		b = c;
-		for (j = 0; j < m; ++j) b = (b*b) % MODULE;
-		r = (r*b) % MODULE;
-		t = (t * ( (b*b) % MODULE) ) % MODULE;
-		c = (b*b) % MODULE;
-		m = i;
-	}
-
-	return r;
+	return sqrt;
 }
 
 __device__ uint64_t inv_mod(uint64_t n) {
@@ -105,7 +111,9 @@ __device__ void FACTORIZE ( )
 
     uint64_t rbitA [BITTYROWS] ;     // bitty block for A
     uint64_t rbitV [BITTYROWS] ;     // bitty block for V
+    uint64_t module ;
     uint64_t sigma ;                 // only used by thread zero
+    uint64_t sqrtQ, sqrtS, sqrtZ ;	 // only used by thread zero for square roots
 
     //--------------------------------------------------------------------------
     // shared memory usage
@@ -115,6 +123,7 @@ __device__ void FACTORIZE ( )
     #define shZ         shMemory.factorize.Z
     #define shRdiag     shMemory.factorize.A1
     #define RSIGMA(i)   shMemory.factorize.V1 [i]
+	#define shModule	shMemory.factorize.module
 
 //    #ifdef WHOLE_FRONT
 //        // T is not computed, and there is no list of tiles
@@ -249,10 +258,36 @@ __device__ void FACTORIZE ( )
         }
 //    #endif
 
-    /* We need all of A to be loaded and T to be cleared before proceeding. */
+
+
+    // Load the module from global memory to shared
+    if (threadIdx.x == 0) {
+    	shModule = *(myTask.AuxAddress[1]);
+    }
+
+    /* We need all of A to be loaded and T to be cleared and module to be ready before proceeding. */
     __syncthreads();
 
+    // Load the module from shared memory to register
+    module = shModule;
 
+
+    //--------------------------------------------------------------------------
+    // precompute square root common parameters q, s, z for thread 0,
+    // which is going to be the only one performing square roots
+    //--------------------------------------------------------------------------
+
+    if (threadIdx.x == 0) {
+    	sqrtQ = module - 1;
+		sqrtS = 0;
+		while (!(sqrtQ & 1)) {
+			sqrtQ = sqrtQ >> 1;
+			sqrtS += 1;
+		}
+		sqrtZ = 2;
+		while (pow_mod(sqrtZ, (module - 1) / 2, module) != module - 1) ++sqrtZ;
+		sqrtZ = pow_mod(sqrtZ, sqrtQ, module);
+    }
 
 
     //--------------------------------------------------------------------------
@@ -284,8 +319,8 @@ __device__ void FACTORIZE ( )
             int i = MYBITTYROW (ii) ;
             if (i >= 1)
             {
-                s += rbitA [ii] * rbitA [ii];
-                s %= MODULE;
+                s += (rbitA [ii] * rbitA [ii]) % module;
+                s %= module;
             }
         }
         RSIGMA (threadIdx.x) = s ;
@@ -301,7 +336,7 @@ __device__ void FACTORIZE ( )
         for (int ii = 0 ; ii < MCHUNK ; ii++)
         {
         	printf("Partial sigma nr. %d: %llu\n", ii, RSIGMA(ii));
-            sigma = (sigma + RSIGMA (ii)) % MODULE ; // 31-bit + 31-bit = max 32-bit -> OK
+            sigma = (sigma + RSIGMA (ii)) % module ;
         }
         printf("Total sigma: %llu\n", sigma);
     }
@@ -350,8 +385,7 @@ __device__ void FACTORIZE ( )
         if (threadIdx.x == 0)
         {
             uint64_t x1 = shA [k][k] ;            // the diagonal A (k,k)
-            uint64_t s, v1, tau ;
-            int sLeg;
+            uint64_t s, v1, tau, sLeg ;
 
 //            if (sigma <= EPSILON)
             if (sigma == 0)
@@ -364,14 +398,14 @@ __device__ void FACTORIZE ( )
             }
             else
             {
-            	s = (x1*x1 + sigma ) % MODULE ;
+            	s = (((x1*x1) % module) + sigma) % module ;
             	if (s == 0) {
                     printf ("Hit s = 0, cannot invert 0 to get tau. Exiting.\n") ;
                     return;
             	}
-                s = sqrt_mod (s, &sLeg) ;
-                v1 = (MODULE + x1 - s) % MODULE ; // prevent unsigned underflow by prepending a module
-                tau = MODULE - inv_mod( (s * v1) % MODULE ) ; // prevent unsigned underflow by prepending a module
+                s = sqrt_mod (s, module, sqrtQ, sqrtS, sqrtZ, &sLeg) ;
+                v1 = (module + x1 - s) % module ; // prevent unsigned underflow by prepending a module
+                tau = module - inv_mod( (s * v1) % module ) ; // prevent unsigned underflow by prepending a module
             }
             shRdiag [k] = s ;       // the diagonal entry of R
             shA [k][k] = v1 ;       // the topmost entry of the vector v
@@ -380,6 +414,8 @@ __device__ void FACTORIZE ( )
 
         // All threads need v1, and later on they need tau
         __syncthreads ( ) ;
+
+        return;
 
         // A (0:k-1,k) now holds the kth column of R (excluding the diagonal).
         // A (k:m-1,k) holds the kth Householder vector (incl. the diagonal).
@@ -691,14 +727,8 @@ int main() {
 	int dev;
 	int numTasks = 1;
 	cudaDeviceProp prop;
-	uint64_t *F;
+	uint64_t *F, *module;
 	TaskDescriptor *queueHost, *queueDev;
-	int haf;
-
-	printf("%llu\n", sqrt_mod(13, &haf));
-	printf("%d\n", haf);
-	return 0;
-
 	HANDLE_ERROR(cudaGetDevice(&dev));
 	HANDLE_ERROR(cudaGetDeviceProperties(&prop, dev));
 
@@ -710,9 +740,11 @@ int main() {
 	HANDLE_ERROR(cudaHostAlloc((void **) &(queueHost), numTasks * sizeof(TaskDescriptor), cudaHostAllocDefault));
 
 	HANDLE_ERROR(cudaHostAlloc((void **) &(F), M * N * sizeof(uint64_t), cudaHostAllocDefault));
+	HANDLE_ERROR(cudaHostAlloc((void **) &(module), sizeof(uint64_t), cudaHostAllocDefault));
 
 	for (int i = 0; i < numTasks; ++i) {
 
+		*module = 23;
 		queueHost[i].Type = TASKTYPE_FactorizeVT_3x1;
 		queueHost[i].fm = M;
 		queueHost[i].fn = N;
@@ -727,16 +759,18 @@ int main() {
 
 		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].F), M * N * sizeof(uint64_t))); // memory for input matrix
 		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[0]), N * N * sizeof(uint64_t))); // memory for output V/T tile
+		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[1]), sizeof(uint64_t))); // memory for module
 
 		for (int m = 0; m < queueHost[i].fm; ++m) {
 			for (int n = 0; n < queueHost[i].fn; ++n) {
-				F[m*queueHost[i].fn + n] = rand() % MODULE;
+				F[m*queueHost[i].fn + n] = rand() % *module;
 				printf("%010llu ", F[m*queueHost[i].fn + n]);
 			}
 			printf("\n");
 		}
 
 		HANDLE_ERROR(cudaMemcpy(queueHost[i].F, F, M * N * sizeof(uint64_t), cudaMemcpyHostToDevice));
+		HANDLE_ERROR(cudaMemcpy(queueHost[i].AuxAddress[1], module, sizeof(uint64_t), cudaMemcpyHostToDevice));
 	}
 	HANDLE_ERROR(cudaMemcpy(queueDev, queueHost, numTasks * sizeof(TaskDescriptor), cudaMemcpyHostToDevice));
 
@@ -751,11 +785,13 @@ int main() {
 	for (int i = 0; i < numTasks; ++i) {
 		HANDLE_ERROR(cudaFree(queueHost[i].F));
 		HANDLE_ERROR(cudaFree(queueHost[i].AuxAddress[0]));
+		HANDLE_ERROR(cudaFree(queueHost[i].AuxAddress[1]));
 	}
 
 	HANDLE_ERROR(cudaFree(queueDev));
 	HANDLE_ERROR(cudaFreeHost(queueHost));
 	HANDLE_ERROR(cudaFreeHost(F));
+	HANDLE_ERROR(cudaFreeHost(module));
 
 
 	printf("Done.\n");
