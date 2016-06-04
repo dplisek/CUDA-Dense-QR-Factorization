@@ -418,7 +418,6 @@ __device__ void FACTORIZE ( )
         // All threads need v1, and later on they need tau
         __syncthreads ( ) ;
 
-        return;
 
         // A (0:k-1,k) now holds the kth column of R (excluding the diagonal).
         // A (k:m-1,k) holds the kth Householder vector (incl. the diagonal).
@@ -449,7 +448,8 @@ __device__ void FACTORIZE ( )
                     int i = MYBITTYROW (ii) ;
                     if (i >= k)
                     {
-                        z += rbitV [ii] * rbitA [ii] ;
+                        z += (rbitV [ii] * rbitA [ii]) % module;
+						z %= module;
                     }
                 }
                 // store z into the reduction space in shared memory
@@ -468,13 +468,15 @@ __device__ void FACTORIZE ( )
             for (int ii = 0 ; ii < MCHUNK ; ii++)
             {
                 z += shZ [ii][threadIdx.x] ;
+                z %= module;
             }
-            shZ [0][threadIdx.x] = - z * TAU ;
+            shZ [0][threadIdx.x] = module - ((z * TAU) % module) ;
         }
 
         // All threads need to see the z vector
         __syncthreads ( ) ;
 
+        return;
         //----------------------------------------------------------------------
         // update A (in register) and compute the next sigma
         //----------------------------------------------------------------------
