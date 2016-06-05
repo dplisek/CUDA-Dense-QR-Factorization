@@ -388,7 +388,6 @@ __device__ void FACTORIZE ( )
             if (sigma == 0)
             {
                 printf ("Error in task %d, column %d: Hit sigma = 0, v1 would become 0, cannot invert 0 to get tau. Exiting.\n", blockIdx.x, k) ;
-                return;
 //                s = x1 ;
 //                v1 = 0 ;
 //                tau = 0 ;
@@ -398,12 +397,10 @@ __device__ void FACTORIZE ( )
             	s = (((x1*x1) % module) + sigma) % module ;
             	if (s == 0) {
                     printf ("Error in task %d, column %d: Hit s = 0, cannot invert 0 to get tau. Exiting.\n", blockIdx.x, k) ;
-                    return;
             	}
                 s = sqrt_mod (s, module, sqrtQ, sqrtS, sqrtZ, &sLeg) ;
                 if (sLeg == module - 1) {
                 	printf ("Error in task %d, column %d: Cannot determine size of vector, no square root of s = %llu. Exiting.\n", blockIdx.x, k, s);
-                	return;
                 }
                 v1 = (module + x1 - s) % module ; // prevent unsigned underflow by prepending a module
                 tau = module - INV( (s * v1) % module , module ) ; // prevent unsigned underflow by prepending a module
