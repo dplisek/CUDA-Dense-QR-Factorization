@@ -732,10 +732,15 @@ __global__ void qrKernel
 
 int main() {
 	int dev;
-	int numTasks = 10;
+	int numTasks = 100;
 	cudaDeviceProp prop;
 	uint64_t *F, *module;
 	TaskDescriptor *queueHost, *queueDev;
+	cudaEvent_t start, stop;
+	float time;
+
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
 
 	HANDLE_ERROR(cudaGetDevice(&dev));
 	HANDLE_ERROR(cudaGetDeviceProperties(&prop, dev));
@@ -771,10 +776,11 @@ int main() {
 		HANDLE_ERROR(cudaMalloc((void **) &(queueHost[i].AuxAddress[1]), sizeof(uint64_t))); // memory for module
 
 		char filename[255];
-		sprintf(filename, "task%03d", i);
+		sprintf(filename, "task%03d", i % 10);
 		FILE *f = fopen(filename, "r");
 		if (!f) {
 			printf("Cannot open file %s for reading.\n", filename);
+			return EXIT_FAILURE;
 		}
 		for (int m = 0; m < queueHost[i].fm; ++m) {
 			for (int n = 0; n < queueHost[i].fn; ++n) {
@@ -796,9 +802,17 @@ int main() {
 	dim3 blocks(numTasks);
 	dim3 threads(NUMTHREADS);
 
+	cudaEventRecord(start, 0);
+
 	qrKernel<<<blocks, threads>>>(queueDev, numTasks);
 
-	cudaDeviceSynchronize();
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+
+	cudaEventElapsedTime(&time, start, stop);
+
+	printf ("Time for the kernel: %f ms\n", time);
+
 
 	for (int i = 0; i < numTasks; ++i) {
 //		HANDLE_ERROR(cudaMemcpy(F, queueHost[i].F, M * N * sizeof(uint64_t), cudaMemcpyDeviceToHost));
