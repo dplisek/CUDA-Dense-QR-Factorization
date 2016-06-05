@@ -317,7 +317,7 @@ __device__ void FACTORIZE ( )
 //            if (sigma <= EPSILON)
             if (sigma == 0)
             {
-                printf ("Error in column %d: Hit sigma = 0, v1 would become 0, cannot invert 0 to get tau. Exiting.\n", k) ;
+                printf ("Error in task %d, column %d: Hit sigma = 0, v1 would become 0, cannot invert 0 to get tau. Exiting.\n", blockIdx.x, k) ;
                 return;
 //                s = x1 ;
 //                v1 = 0 ;
@@ -327,7 +327,7 @@ __device__ void FACTORIZE ( )
             {
             	s = (((x1*x1)) + sigma) ;
             	if (s == 0) {
-                    printf ("Error in column %d: Hit s = 0, cannot invert 0 to get tau. Exiting.\n", k) ;
+                    printf ("Error in task %d, column %d: Hit s = 0, cannot invert 0 to get tau. Exiting.\n", blockIdx.x, k) ;
                     return;
             	}
                 s = sqrt((double) s) ;
@@ -659,14 +659,17 @@ int main() {
 	TaskDescriptor *queueHost, *queueDev;
 	cudaEvent_t start, stop;
 	float time;
+	size_t totalFree, totalMemory;
 
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
 	HANDLE_ERROR(cudaGetDevice(&dev));
 	HANDLE_ERROR(cudaGetDeviceProperties(&prop, dev));
+	HANDLE_ERROR(cudaMemGetInfo(&totalFree, &totalMemory));
 
 	printf("Device: %s\n", prop.name);
+	printf("Free memory: %lu / %lu MB\n", totalFree / 1024 / 1024, totalMemory / 1024 / 1024);
 
 	srand(15);
 
