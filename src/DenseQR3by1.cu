@@ -30,63 +30,6 @@ static void HandleError(cudaError_t err, const char *file, int line) {
 	}
 }
 
-__device__ __host__ uint64_t pow_mod(uint64_t x, uint64_t b, uint64_t module) {
-	uint64_t z = 1;
-	uint64_t i = ((uint64_t) 1) << MODULE_MAX_BITS - 1; // has only a 1 in the highest possible bit in module
-
-	while (i && !(b & i)) {
-		i = i >> 1;
-	}
-
-	while (i) {
-		z = (z*z) % module;
-		if (b & i) z = (z*x) % module;
-		i = i >> 1;
-	}
-
-	return z;
-}
-
-__device__ __host__ uint64_t sqrt_mod(uint64_t n, uint64_t module, uint64_t sqrtQ, uint64_t sqrtS, uint64_t sqrtZ, uint64_t *nLeg) {
-	uint64_t sqrt, test, prevRequiredSquares, requiredSquares, c, iterator, squarer;
-
-	// test quadratic residue
-	*nLeg = pow_mod(n, (module - 1) / 2, module);
-	if (*nLeg != 1) return n;
-
-	// initialize loop variables
-	prevRequiredSquares = sqrtS;
-	c = sqrtZ;
-	sqrt = pow_mod(n, ((sqrtQ + 1) / 2), module);
-	test = pow_mod(n, sqrtQ, module);
-
-	// sqrt generation loop
-	while (test != 1) {
-
-		// c squaring loop
-		squarer = test;
-		requiredSquares = 1;
-		bool doneSquaring = false;
-		for (iterator = 0; iterator < prevRequiredSquares - 2; ++iterator) {
-			if (doneSquaring || (squarer = (squarer*squarer) % module) == 1) {
-				doneSquaring = true;
-				c = (c*c) % module;
-			} else {
-				++requiredSquares;
-			}
-		}
-		prevRequiredSquares = requiredSquares;
-
-		// update loop variables
-		sqrt = (sqrt*c) % module;
-		c = (c*c) % module;
-		test = (test*c) % module;
-
-	}
-
-	return sqrt;
-}
-
 __device__ void FACTORIZE ( )
 {
 
@@ -275,18 +218,6 @@ __device__ void FACTORIZE ( )
     // which is going to be the only one performing square roots
     //--------------------------------------------------------------------------
 
-    if (threadIdx.x == 0) {
-    	sqrtQ = module - 1;
-		sqrtS = 0;
-		while (!(sqrtQ & 1)) {
-			sqrtQ = sqrtQ >> 1;
-			sqrtS += 1;
-		}
-		sqrtZ = 2;
-		while (pow_mod(sqrtZ, (module - 1) / 2, module) != module - 1) ++sqrtZ;
-		sqrtZ = pow_mod(sqrtZ, sqrtQ, module);
-    }
-
 
     //--------------------------------------------------------------------------
     // load A into the bitty block
@@ -317,8 +248,7 @@ __device__ void FACTORIZE ( )
             int i = MYBITTYROW (ii) ;
             if (i >= 1)
             {
-                s += (rbitA [ii] * rbitA [ii]) % module;
-                s %= module;
+                s += (rbitA [ii] * rbitA [ii]) ;
             }
         }
         RSIGMA (threadIdx.x) = s ;
@@ -333,7 +263,7 @@ __device__ void FACTORIZE ( )
         #pragma unroll
         for (int ii = 0 ; ii < MCHUNK ; ii++)
         {
-            sigma = (sigma + RSIGMA (ii)) % module ;
+            sigma = (sigma + RSIGMA (ii))  ;
         }
         //printf("Total sigma for column 0: %llu\n", sigma);
     }
@@ -395,18 +325,14 @@ __device__ void FACTORIZE ( )
             }
             else
             {
-            	s = (((x1*x1) % module) + sigma) % module ;
+            	s = (((x1*x1)) + sigma) ;
             	if (s == 0) {
                     printf ("Error in column %d: Hit s = 0, cannot invert 0 to get tau. Exiting.\n", k) ;
                     return;
             	}
-                s = sqrt_mod (s, module, sqrtQ, sqrtS, sqrtZ, &sLeg) ;
-                if (sLeg == module - 1) {
-                	printf ("Error in column %d: Cannot determine size of vector, no square root of s = %llu. Exiting.\n", k, s);
-                	return;
-                }
-                v1 = (module + x1 - s) % module ; // prevent unsigned underflow by prepending a module
-                tau = module - INV( (s * v1) % module , module ) ; // prevent unsigned underflow by prepending a module
+                s = sqrt((double) s) ;
+                v1 = (x1 - s) ; // prevent unsigned underflow by prepending a module
+                tau = - 1/ (s * v1) ; // prevent unsigned underflow by prepending a module
                 //printf("Successfully computed Householder coefficients for column %d. s = %llu, v1 = %llu, tau = %llu.\n", k, s, v1, tau);
             }
             shRdiag [k] = s ;       // the diagonal entry of R
@@ -447,8 +373,7 @@ __device__ void FACTORIZE ( )
                     int i = MYBITTYROW (ii) ;
                     if (i >= k)
                     {
-                        z += (rbitV [ii] * rbitA [ii]) % module;
-						z %= module;
+                        z += (rbitV [ii] * rbitA [ii]) ;
                     }
                 }
                 // store z into the reduction space in shared memory
@@ -467,9 +392,8 @@ __device__ void FACTORIZE ( )
             for (int ii = 0 ; ii < MCHUNK ; ii++)
             {
                 z += shZ [ii][threadIdx.x] ;
-                z %= module;
             }
-            shZ [0][threadIdx.x] = module - ((z * TAU) % module) ;
+            shZ [0][threadIdx.x] = - ((z * TAU) ) ;
         }
 
         // All threads need to see the z vector
@@ -491,8 +415,7 @@ __device__ void FACTORIZE ( )
                     int i = MYBITTYROW (ii) ;
                     if (i >= k)
                     {
-                        rbitA [ii] += (rbitV [ii] * z) % module ;
-                        rbitA [ii] %= module;
+                        rbitA [ii] += (rbitV [ii] * z)  ;
                     }
                 }
             }
@@ -509,8 +432,7 @@ __device__ void FACTORIZE ( )
                     int i = MYBITTYROW (ii) ;
                     if (i >= k+2)
                     {
-                        s += (rbitA [ii] * rbitA [ii]) % module;
-                        s %= module;
+                        s += (rbitA [ii] * rbitA [ii]) ;
                     }
                 }
                 RSIGMA (MYBITTYROW(0)) = s ;
@@ -529,8 +451,7 @@ __device__ void FACTORIZE ( )
                 uint64_t t_ik = 0 ;
                 for (int jj = 0 ; jj < k ; jj++)
                 {
-                    t_ik += (shT [threadIdx.x][jj] * shZ [0][jj]) % module;
-                    t_ik %= module;
+                    t_ik += (shT [threadIdx.x][jj] * shZ [0][jj]) ;
                 }
                 shT [threadIdx.x][k] = t_ik ;
             }
@@ -550,7 +471,7 @@ __device__ void FACTORIZE ( )
             #pragma unroll
             for (int ii = 0 ; ii < MCHUNK ; ii++)
             {
-                sigma = (sigma + RSIGMA (ii)) % module ;
+                sigma = (sigma + RSIGMA (ii)) ;
             }
             //printf("Total sigma for column %d: %llu\n", k+1, sigma);
         }
