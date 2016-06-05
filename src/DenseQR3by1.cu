@@ -738,14 +738,17 @@ int main() {
 	TaskDescriptor *queueHost, *queueDev;
 	cudaEvent_t start, stop;
 	float time;
+	size_t totalFree, totalMemory;
 
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
 	HANDLE_ERROR(cudaGetDevice(&dev));
 	HANDLE_ERROR(cudaGetDeviceProperties(&prop, dev));
+	HANDLE_ERROR(cudaMemGetInfo(&totalFree, &totalMemory));
 
 	printf("Device: %s\n", prop.name);
+	printf("Free memory: %lu / %lu MB\n", totalFree / 1024 / 1024, totalMemory / 1024 / 1024);
 
 	srand(15);
 
