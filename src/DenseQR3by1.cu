@@ -732,7 +732,7 @@ __global__ void qrKernel
 
 int main() {
 	int dev;
-	int numTasks = 6;
+	int numTasks = 10;
 	cudaDeviceProp prop;
 	uint64_t *F, *module;
 	TaskDescriptor *queueHost, *queueDev;
@@ -742,7 +742,7 @@ int main() {
 
 	printf("Device: %s\n", prop.name);
 
-	srand(14);
+	srand(15);
 
 	HANDLE_ERROR(cudaMalloc((void **) &(queueDev), numTasks * sizeof(TaskDescriptor)));
 	HANDLE_ERROR(cudaHostAlloc((void **) &(queueHost), numTasks * sizeof(TaskDescriptor), cudaHostAllocDefault));
